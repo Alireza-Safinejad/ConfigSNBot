@@ -1,21 +1,19 @@
 import re
 import asyncio
+import aiohttp
 from aiogram import Bot
 from aiogram.enums import ParseMode
 from config import CHANNEL_ID
 
 # کانال‌های منبع کانفیگ رایگان
 SOURCE_CHANNELS = [
-    "@mitivpn",
-    "@irantweety", 
-    "@drmobileiir"
+    "mitivpn",
+    "irantweety",
+    "drmobileiir"
 ]
 
 # حداکثر کانفیگ در روز
 MAX_CONFIGS_PER_DAY = 20
-
-# ساعت‌های ارسال
-SEND_HOURS = [8, 12, 16, 20, 23]
 
 # ذخیره کانفیگ‌های جمع‌آوری شده
 collected_configs = []
@@ -23,7 +21,6 @@ configs_sent_today = 0
 
 
 def extract_configs(text: str) -> list:
-    """استخراج لینک‌های کانفیگ از متن"""
     patterns = [
         r'vless://[^\s\n]+',
         r'vmess://[^\s\n]+',
@@ -40,35 +37,31 @@ def extract_configs(text: str) -> list:
 
 
 async def collect_configs_from_channels(bot: Bot):
-    """جمع‌آوری کانفیگ از کانال‌های منبع"""
     global collected_configs
     new_configs = []
 
     for channel in SOURCE_CHANNELS:
         try:
-            # دریافت آخرین پیام‌های کانال
-            messages = await bot.get_chat(channel)
-            # چک کردن آخرین پیام‌ها
-            async for message in bot.get_updates():
-                if hasattr(message, 'channel_post') and message.channel_post:
-                    post = message.channel_post
-                    if post.chat.username == channel.replace('@', ''):
-                        if post.text:
-                            configs = extract_configs(post.text)
-                            new_configs.extend(configs)
+            # استفاده از API عمومی تلگرام برای خواندن کانال
+            url = f"https://t.me/s/{channel}"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        html = await resp.text()
+                        configs = extract_configs(html)
+                        new_configs.extend(configs)
+                        print(f"✅ {len(configs)} کانفیگ از {channel} دریافت شد.")
         except Exception as e:
             print(f"❌ خطا در دریافت از {channel}: {e}")
 
-    # اضافه کردن به لیست و حذف تکراری‌ها
     for config in new_configs:
         if config not in collected_configs:
             collected_configs.append(config)
 
-    print(f"✅ {len(new_configs)} کانفیگ جدید جمع‌آوری شد. کل: {len(collected_configs)}")
+    print(f"✅ {len(new_configs)} کانفیگ جدید. کل: {len(collected_configs)}")
 
 
 async def send_free_config(bot: Bot):
-    """ارسال یک کانفیگ رایگان به کانال"""
     global collected_configs, configs_sent_today
 
     if configs_sent_today >= MAX_CONFIGS_PER_DAY:
@@ -76,10 +69,11 @@ async def send_free_config(bot: Bot):
         return
 
     if not collected_configs:
-        print("⚠️ کانفیگی برای ارسال وجود ندارد.")
-        return
+        await collect_configs_from_channels(bot)
+        if not collected_configs:
+            print("⚠️ کانفیگی برای ارسال وجود ندارد.")
+            return
 
-    # برداشتن اولین کانفیگ از لیست
     config_link = collected_configs.pop(0)
 
     text = (
@@ -89,7 +83,7 @@ async def send_free_config(bot: Bot):
         f"`{config_link}`\n\n"
         "لینک رو کپی کن و داخل V2rayNG یا Streisand یا V2rayN وارد کن.\n\n"
         "━━━━━━━━━━━━━━━\n"
-        "💎 برای کانفیگ دائمی و با کیفیت:\n"
+        "💎 برای کانفیگ VIP با سرعت بالا:\n"
         "👉 @ConfigSNBot\n"
         "📢 کانال ما: @ConfigSN_free"
     )
@@ -107,7 +101,6 @@ async def send_free_config(bot: Bot):
 
 
 async def reset_daily_counter():
-    """ریست کردن شمارنده روزانه"""
     global configs_sent_today
     configs_sent_today = 0
     print("✅ شمارنده روزانه ریست شد.")
