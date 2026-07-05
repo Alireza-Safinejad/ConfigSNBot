@@ -47,8 +47,6 @@ async def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 referrer_id INTEGER NOT NULL,
                 referred_id INTEGER NOT NULL,
-                plan_type TEXT,
-                plan_key TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -61,6 +59,15 @@ async def init_db():
                 required_refs INTEGER NOT NULL,
                 current_refs INTEGER DEFAULT 0,
                 status TEXT DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS configs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                config_link TEXT UNIQUE NOT NULL,
+                source TEXT,
+                used INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -155,9 +162,8 @@ async def get_today_sales():
 
 async def add_referral(referrer_id: int, referred_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("""
-            INSERT INTO referrals (referrer_id, referred_id) VALUES (?, ?)
-        """, (referrer_id, referred_id))
+        await db.execute("INSERT INTO referrals (referrer_id, referred_id) VALUES (?, ?)",
+                        (referrer_id, referred_id))
         await db.commit()
 
 async def get_referral_count(telegram_id: int):
@@ -195,3 +201,39 @@ async def complete_referral_pending(telegram_id: int):
             UPDATE referral_pending SET status = 'completed' WHERE telegram_id = ? AND status = 'pending'
         """, (telegram_id,))
         await db.commit()
+
+# ==================== مدیریت کانفیگ‌ها ====================
+
+async def save_config(config_link: str, source: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+            INSERT OR IGNORE INTO configs (config_link, source) VALUES (?, ?)
+        """, (config_link, source))
+        await db.commit()
+
+async def get_unused_config() -> str:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("""
+            SELECT id, config_link FROM configs WHERE used = 0
+            ORDER BY created_at ASC LIMIT 1
+        """) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                await db.execute("UPDATE configs SET used = 1 WHERE id = ?", (row[0],))
+                await db.commit()
+                return row[1]
+    return None
+
+async def get_configs_count() -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT COUNT(*) FROM configs WHERE used = 0") as cursor:
+            result = await cursor.fetchone()
+            return result[0] if result else 0
+
+async def delete_old_configs():
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+            DELETE FROM configs WHERE created_at < datetime('now', '-7 days')
+        """)
+        await db.commit()
+        print("✅ کانفیگ‌های قدیمی حذف شدن.")

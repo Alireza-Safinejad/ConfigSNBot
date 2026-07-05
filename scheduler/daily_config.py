@@ -1,101 +1,99 @@
 import re
-import asyncio
 import aiohttp
 from aiogram import Bot
-from aiogram.enums import ParseMode
 from config import CHANNEL_ID
+from database.db import save_config, get_unused_config, get_configs_count, delete_old_configs
 
-# کانال‌های منبع کانفیگ رایگان
 SOURCE_CHANNELS = [
     "mitivpn",
     "irantweety",
     "drmobileiir"
 ]
 
-# حداکثر کانفیگ در روز
 MAX_CONFIGS_PER_DAY = 20
-
-# ذخیره کانفیگ‌های جمع‌آوری شده
-collected_configs = []
 configs_sent_today = 0
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
+    "Accept-Language": "fa-IR,fa;q=0.9,en;q=0.8",
+}
 
 
 def extract_configs(text: str) -> list:
     patterns = [
-        r'vless://[^\s\n]+',
-        r'vmess://[^\s\n]+',
-        r'trojan://[^\s\n]+',
-        r'ss://[^\s\n]+',
-        r'hy2://[^\s\n]+',
-        r'hysteria2://[^\s\n]+',
+        r'vless://[A-Za-z0-9+/=@:.\-_?#&%]+',
+        r'vmess://[A-Za-z0-9+/=]+',
+        r'trojan://[A-Za-z0-9+/=@:.\-_?#&%]+',
+        r'ss://[A-Za-z0-9+/=@:.\-_?#&%]+',
+        r'hy2://[A-Za-z0-9+/=@:.\-_?#&%]+',
+        r'hysteria2://[A-Za-z0-9+/=@:.\-_?#&%]+',
     ]
     configs = []
     for pattern in patterns:
         found = re.findall(pattern, text)
         configs.extend(found)
-    return configs
+    return list(set(configs))
 
 
-async def collect_configs_from_channels(bot: Bot):
-    global collected_configs
-    new_configs = []
-
+async def collect_configs_from_channels(bot: Bot = None):
+    total_new = 0
     for channel in SOURCE_CHANNELS:
         try:
-            # استفاده از API عمومی تلگرام برای خواندن کانال
             url = f"https://t.me/s/{channel}"
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            async with aiohttp.ClientSession(headers=HEADERS) as session:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=20)) as resp:
                     if resp.status == 200:
                         html = await resp.text()
                         configs = extract_configs(html)
-                        new_configs.extend(configs)
+                        for config in configs:
+                            await save_config(config, channel)
+                        total_new += len(configs)
                         print(f"✅ {len(configs)} کانفیگ از {channel} دریافت شد.")
+                    else:
+                        print(f"⚠️ {channel} status: {resp.status}")
         except Exception as e:
             print(f"❌ خطا در دریافت از {channel}: {e}")
 
-    for config in new_configs:
-        if config not in collected_configs:
-            collected_configs.append(config)
+    count = await get_configs_count()
+    print(f"✅ کل کانفیگ‌های موجود: {count}")
 
-    print(f"✅ {len(new_configs)} کانفیگ جدید. کل: {len(collected_configs)}")
+
+async def get_next_config() -> str:
+    config = await get_unused_config()
+    if not config:
+        await collect_configs_from_channels()
+        config = await get_unused_config()
+    return config
 
 
 async def send_free_config(bot: Bot):
-    global collected_configs, configs_sent_today
+    global configs_sent_today
 
     if configs_sent_today >= MAX_CONFIGS_PER_DAY:
         print("⚠️ حداکثر کانفیگ روزانه ارسال شده.")
         return
 
-    if not collected_configs:
-        await collect_configs_from_channels(bot)
-        if not collected_configs:
-            print("⚠️ کانفیگی برای ارسال وجود ندارد.")
-            return
+    config_link = await get_next_config()
 
-    config_link = collected_configs.pop(0)
+    if not config_link:
+        print("⚠️ کانفیگی برای ارسال وجود ندارد.")
+        return
 
     text = (
         "🎁 کانفیگ رایگان\n\n"
-        "⏰ مدت: ۲۴ ساعت\n"
-        "📊 حجم: محدود\n\n"
-        f"`{config_link}`\n\n"
+        "⏰ مدت: ۲۴ ساعت\n\n"
+        f"{config_link}\n\n"
         "لینک رو کپی کن و داخل V2rayNG یا Streisand یا V2rayN وارد کن.\n\n"
         "━━━━━━━━━━━━━━━\n"
-        "💎 برای کانفیگ VIP با سرعت بالا:\n"
+        "💎 برای کانفیگ VIP پایدار و سریع:\n"
         "👉 @ConfigSNBot\n"
         "📢 کانال ما: @ConfigSN_free"
     )
 
     try:
-        await bot.send_message(
-            chat_id=CHANNEL_ID,
-            text=text,
-            parse_mode=ParseMode.MARKDOWN
-        )
+        await bot.send_message(chat_id=CHANNEL_ID, text=text)
         configs_sent_today += 1
-        print(f"✅ کانفیگ ارسال شد. تعداد امروز: {configs_sent_today}")
+        print(f"✅ کانفیگ رایگان ارسال شد. امروز: {configs_sent_today}")
     except Exception as e:
         print(f"❌ خطا در ارسال کانفیگ: {e}")
 
@@ -103,4 +101,5 @@ async def send_free_config(bot: Bot):
 async def reset_daily_counter():
     global configs_sent_today
     configs_sent_today = 0
-    print("✅ شمارنده روزانه ریست شد.")
+    await delete_old_configs()
+    print("✅ شمارنده روزانه ریست و کانفیگ‌های قدیمی حذف شدن.")
