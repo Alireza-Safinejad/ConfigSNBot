@@ -10,11 +10,11 @@ SOURCE_CHANNELS = [
     "drmobileiir"
 ]
 
-MAX_CONFIGS_PER_DAY = 20
+MAX_CONFIGS_PER_DAY = 10
 configs_sent_today = 0
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
+    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15",
     "Accept-Language": "fa-IR,fa;q=0.9,en;q=0.8",
 }
 
@@ -49,8 +49,6 @@ async def collect_configs_from_channels(bot: Bot = None):
                             await save_config(config, channel)
                         total_new += len(configs)
                         print(f"✅ {len(configs)} کانفیگ از {channel} دریافت شد.")
-                    else:
-                        print(f"⚠️ {channel} status: {resp.status}")
         except Exception as e:
             print(f"❌ خطا در دریافت از {channel}: {e}")
 
@@ -81,17 +79,17 @@ async def send_free_config(bot: Bot):
 
     text = (
         "🎁 کانفیگ رایگان\n\n"
-        "⏰ مدت: ۲۴ ساعت\n\n"
-        f"{config_link}\n\n"
-        "لینک رو کپی کن و داخل V2rayNG یا Streisand یا V2rayN وارد کن.\n\n"
+        "👇 روی لینک زیر بزن و کپی کن:\n\n"
+        f"`{config_link}`\n\n"
+        "داخل V2rayNG یا Streisand یا V2rayN وارد کن.\n\n"
         "━━━━━━━━━━━━━━━\n"
-        "💎 برای کانفیگ VIP پایدار و سریع:\n"
+        "💎 کانفیگ VIP پایدار و سریع:\n"
         "👉 @ConfigSNBot\n"
-        "📢 کانال ما: @ConfigSN_free"
+        "📢 @ConfigSN_free"
     )
 
     try:
-        await bot.send_message(chat_id=CHANNEL_ID, text=text)
+        await bot.send_message(chat_id=CHANNEL_ID, text=text, parse_mode="Markdown")
         configs_sent_today += 1
         print(f"✅ کانفیگ رایگان ارسال شد. امروز: {configs_sent_today}")
     except Exception as e:
@@ -102,4 +100,4 @@ async def reset_daily_counter():
     global configs_sent_today
     configs_sent_today = 0
     await delete_old_configs()
-    print("✅ شمارنده روزانه ریست و کانفیگ‌های قدیمی حذف شدن.")
+    print("✅ شمارنده ریست و کانفیگ‌های قدیمی حذف شدن.")

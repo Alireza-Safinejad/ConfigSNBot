@@ -1,9 +1,7 @@
 import aiohttp
 import os
 
-
 PLISIO_SECRET_KEY = os.getenv("PLISIO_SECRET_KEY")
-USDT_WALLET = os.getenv("USDT_WALLET")
 
 
 class PlisioService:
@@ -12,14 +10,17 @@ class PlisioService:
         self.base_url = "https://api.plisio.net/api/v1"
 
     async def create_invoice(self, amount_usd: float, order_id: str, order_name: str) -> dict:
+        # حداقل مبلغ Plisio یک دلاره
+        actual_amount = max(amount_usd, 1.0)
+
         params = {
             "api_key": self.secret_key,
             "currency": "USDT_TRX",
-            "amount": str(amount_usd),
+            "amount": str(actual_amount),
             "order_number": order_id,
             "order_name": order_name,
             "source_currency": "USD",
-            "source_amount": str(amount_usd),
+            "source_amount": str(actual_amount),
             "email": "noreply@configsn.com",
         }
 
